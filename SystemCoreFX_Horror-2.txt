@@ -1,0 +1,661 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:FindFirstChild("PlayerGui") or CoreGui
+
+if playerGui:FindFirstChild("SystemCoreFX") then
+    playerGui.SystemCoreFX:Destroy()
+end
+
+if Workspace:FindFirstChild("SystemCoreMonster") then
+    Workspace.SystemCoreMonster:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SystemCoreFX"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function()
+    screenGui.Parent = CoreGui
+end)
+
+if not screenGui.Parent then
+    screenGui.Parent = playerGui
+end
+
+local sound = Instance.new("Sound")
+sound.Name = "CustomAudio"
+sound.Looped = true
+sound.Volume = 10
+sound.Parent = SoundService
+
+task.spawn(function()
+    pcall(function()
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if req then
+            local res = req({
+                Url = "https://github.com/objwghd-maker/song/raw/refs/heads/main/video_20260929_200636.mp3",
+                Method = "GET"
+            })
+
+            if res and res.Body then
+                local filePath = "custom_audio_" .. tick() .. ".mp3"
+                writefile(filePath, res.Body)
+                sound.SoundId = getcustomasset(filePath)
+                sound:Load()
+            end
+        end
+    end)
+end)
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleButton"
+toggleButton.Size = UDim2.new(0, 120, 0, 120)
+toggleButton.Position = UDim2.new(0, 20, 0, 20)
+toggleButton.BackgroundTransparency = 1
+toggleButton.Text = "▲"
+toggleButton.TextScaled = true
+toggleButton.Font = Enum.Font.GothamBlack
+toggleButton.TextColor3 = Color3.fromRGB(255, 220, 0)
+toggleButton.AutoButtonColor = false
+toggleButton.Parent = screenGui
+
+local buttonStroke = Instance.new("UIStroke")
+buttonStroke.Color = Color3.fromRGB(255, 180, 0)
+buttonStroke.Thickness = 3
+buttonStroke.Parent = toggleButton
+
+local dragging = false
+local dragStart
+local startPos
+
+toggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = toggleButton.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+
+        toggleButton.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+local isActive = false
+local effectStartTime = 0
+local floatStarted = false
+local constructionSwirlActive = false
+
+local floorParts = {}
+local originalColors = {}
+local originalCFrames = {}
+
+local swirlParts = {}
+local swirlData = {}
+local swirlOriginalCFrames = {}
+
+local monster
+local monsterParts = {}
+local monsterBaseCFrames = {}
+local monsterLight
+local monsterHighlight
+
+local monsterWorldPosition
+local fixedMonsterOffset = Vector3.new(0, 55, -350)
+
+local earthquakeStrength = 0.18
+local earthquakeSpeed = 18
+
+local floatDuration = 6
+local floatHeight = 120
+local floatStartCFrame
+local floatTargetCFrame
+
+local originalLighting = {
+    Brightness = Lighting.Brightness,
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+    ColorShift_Top = Lighting.ColorShift_Top,
+    ColorShift_Bottom = Lighting.ColorShift_Bottom,
+    FogColor = Lighting.FogColor,
+    FogStart = Lighting.FogStart,
+    FogEnd = Lighting.FogEnd
+}
+
+local function createPart(parent, name, size, color, material, transparency)
+    local part = Instance.new("Part")
+    part.Name = name
+    part.Size = size
+    part.Color = color
+    part.Material = material or Enum.Material.Neon
+    part.Transparency = transparency or 0
+    part.Anchored = true
+    part.CanCollide = false
+    part.CanTouch = false
+    part.CanQuery = false
+    part.CastShadow = true
+    part.Parent = parent
+    return part
+end
+
+local function getFixedMonsterPosition()
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if root then
+        return root.Position + fixedMonsterOffset
+    end
+
+    return Vector3.new(0, 55, -350)
+end
+
+local function createMonster()
+    if Workspace:FindFirstChild("SystemCoreMonster") then
+        Workspace.SystemCoreMonster:Destroy()
+    end
+
+    monsterParts = {}
+    monsterBaseCFrames = {}
+
+    monsterWorldPosition = getFixedMonsterPosition()
+
+    local model = Instance.new("Model")
+    model.Name = "SystemCoreMonster"
+    model.Parent = Workspace
+
+    local baseCFrame = CFrame.new(monsterWorldPosition)
+
+    local body = createPart(model, "MonsterBody", Vector3.new(18, 105, 15), Color3.fromRGB(90, 0, 0), Enum.Material.Neon)
+    body.CFrame = baseCFrame * CFrame.Angles(0, math.rad(-4), math.rad(2))
+    table.insert(monsterParts, body)
+    monsterBaseCFrames[body] = body.CFrame
+
+    local chest = createPart(model, "MonsterChest", Vector3.new(28, 48, 19), Color3.fromRGB(115, 0, 0), Enum.Material.Neon)
+    chest.CFrame = baseCFrame * CFrame.new(0, 20, -1) * CFrame.Angles(0, 0, math.rad(-2))
+    table.insert(monsterParts, chest)
+    monsterBaseCFrames[chest] = chest.CFrame
+
+    local head = createPart(model, "MonsterHead", Vector3.new(24, 28, 21), Color3.fromRGB(145, 0, 0), Enum.Material.Neon)
+    head.CFrame = baseCFrame * CFrame.new(0, 73, -1)
+    table.insert(monsterParts, head)
+    monsterBaseCFrames[head] = head.CFrame
+
+    local neck = createPart(model, "MonsterNeck", Vector3.new(13, 18, 13), Color3.fromRGB(105, 0, 0), Enum.Material.Neon)
+    neck.CFrame = baseCFrame * CFrame.new(0, 52, 0)
+    table.insert(monsterParts, neck)
+    monsterBaseCFrames[neck] = neck.CFrame
+
+    local leftArm = createPart(model, "LeftArm", Vector3.new(11, 76, 12), Color3.fromRGB(75, 0, 0), Enum.Material.Neon)
+    leftArm.CFrame = baseCFrame * CFrame.new(-19, 5, 0) * CFrame.Angles(0, 0, math.rad(-7))
+    table.insert(monsterParts, leftArm)
+    monsterBaseCFrames[leftArm] = leftArm.CFrame
+
+    local rightArm = createPart(model, "RightArm", Vector3.new(11, 76, 12), Color3.fromRGB(75, 0, 0), Enum.Material.Neon)
+    rightArm.CFrame = baseCFrame * CFrame.new(19, 5, 0) * CFrame.Angles(0, 0, math.rad(7))
+    table.insert(monsterParts, rightArm)
+    monsterBaseCFrames[rightArm] = rightArm.CFrame
+
+    local leftHand = createPart(model, "LeftHand", Vector3.new(16, 22, 14), Color3.fromRGB(95, 0, 0), Enum.Material.Neon)
+    leftHand.CFrame = baseCFrame * CFrame.new(-23, -35, -1) * CFrame.Angles(0, 0, math.rad(-8))
+    table.insert(monsterParts, leftHand)
+    monsterBaseCFrames[leftHand] = leftHand.CFrame
+
+    local rightHand = createPart(model, "RightHand", Vector3.new(16, 22, 14), Color3.fromRGB(95, 0, 0), Enum.Material.Neon)
+    rightHand.CFrame = baseCFrame * CFrame.new(23, -35, -1) * CFrame.Angles(0, 0, math.rad(8))
+    table.insert(monsterParts, rightHand)
+    monsterBaseCFrames[rightHand] = rightHand.CFrame
+
+    local leftLeg = createPart(model, "LeftLeg", Vector3.new(12, 82, 13), Color3.fromRGB(65, 0, 0), Enum.Material.Neon)
+    leftLeg.CFrame = baseCFrame * CFrame.new(-8, -83, 0) * CFrame.Angles(0, 0, math.rad(-2))
+    table.insert(monsterParts, leftLeg)
+    monsterBaseCFrames[leftLeg] = leftLeg.CFrame
+
+    local rightLeg = createPart(model, "RightLeg", Vector3.new(12, 82, 13), Color3.fromRGB(65, 0, 0), Enum.Material.Neon)
+    rightLeg.CFrame = baseCFrame * CFrame.new(8, -83, 0) * CFrame.Angles(0, 0, math.rad(2))
+    table.insert(monsterParts, rightLeg)
+    monsterBaseCFrames[rightLeg] = rightLeg.CFrame
+
+    local leftEye = createPart(model, "LeftEye", Vector3.new(5.5, 7, 2), Color3.fromRGB(255, 0, 0), Enum.Material.Neon)
+    leftEye.CFrame = baseCFrame * CFrame.new(-6, 76, -11)
+    table.insert(monsterParts, leftEye)
+    monsterBaseCFrames[leftEye] = leftEye.CFrame
+
+    local rightEye = createPart(model, "RightEye", Vector3.new(5.5, 7, 2), Color3.fromRGB(255, 0, 0), Enum.Material.Neon)
+    rightEye.CFrame = baseCFrame * CFrame.new(6, 76, -11)
+    table.insert(monsterParts, rightEye)
+    monsterBaseCFrames[rightEye] = rightEye.CFrame
+
+    local mouth = createPart(model, "MonsterMouth", Vector3.new(13, 4, 2), Color3.fromRGB(255, 0, 0), Enum.Material.Neon)
+    mouth.CFrame = baseCFrame * CFrame.new(0, 67, -11)
+    table.insert(monsterParts, mouth)
+    monsterBaseCFrames[mouth] = mouth.CFrame
+
+    local leftHorn = createPart(model, "LeftHorn", Vector3.new(6, 26, 6), Color3.fromRGB(75, 0, 0), Enum.Material.Neon)
+    leftHorn.CFrame = baseCFrame * CFrame.new(-8, 99, 0) * CFrame.Angles(0, 0, math.rad(-15))
+    table.insert(monsterParts, leftHorn)
+    monsterBaseCFrames[leftHorn] = leftHorn.CFrame
+
+    local rightHorn = createPart(model, "RightHorn", Vector3.new(6, 26, 6), Color3.fromRGB(75, 0, 0), Enum.Material.Neon)
+    rightHorn.CFrame = baseCFrame * CFrame.new(8, 99, 0) * CFrame.Angles(0, 0, math.rad(15))
+    table.insert(monsterParts, rightHorn)
+    monsterBaseCFrames[rightHorn] = rightHorn.CFrame
+
+    monsterLight = Instance.new("PointLight")
+    monsterLight.Name = "RedMonsterLight"
+    monsterLight.Color = Color3.fromRGB(255, 0, 0)
+    monsterLight.Brightness = 18
+    monsterLight.Range = 150
+    monsterLight.Shadows = true
+    monsterLight.Parent = head
+
+    monsterHighlight = Instance.new("Highlight")
+    monsterHighlight.Name = "MonsterHighlight"
+    monsterHighlight.FillColor = Color3.fromRGB(255, 0, 0)
+    monsterHighlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+    monsterHighlight.FillTransparency = 0.72
+    monsterHighlight.OutlineTransparency = 0
+    monsterHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    monsterHighlight.Parent = model
+
+    monster = model
+end
+
+local function destroyMonster()
+    monsterParts = {}
+    monsterBaseCFrames = {}
+    monsterWorldPosition = nil
+
+    if monster then
+        monster:Destroy()
+        monster = nil
+    end
+
+    monsterLight = nil
+    monsterHighlight = nil
+end
+
+local function updateFloorList()
+    floorParts = {}
+    originalColors = {}
+    originalCFrames = {}
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            local size = obj.Size
+            local isHorizontal = size.Y < size.X and size.Y < size.Z
+            local isLargeArea = (size.X >= 10 and size.Z >= 10) or obj.Position.Y < 5
+
+            if isHorizontal or isLargeArea then
+                table.insert(floorParts, obj)
+                originalColors[obj] = obj.Color
+                originalCFrames[obj] = obj.CFrame
+            end
+        end
+    end
+end
+
+local function prepareConstructionSwirl()
+    swirlParts = {}
+    swirlData = {}
+    swirlOriginalCFrames = {}
+
+    if not monsterWorldPosition then
+        return
+    end
+
+    for _, obj in ipairs(floorParts) do
+        if obj and obj.Parent and not obj:IsDescendantOf(monster) then
+            local distance = (obj.Position - monsterWorldPosition).Magnitude
+
+            if distance <= 850 then
+                table.insert(swirlParts, obj)
+                swirlOriginalCFrames[obj] = obj.CFrame
+
+                local relative = obj.Position - monsterWorldPosition
+                local radius = math.clamp(Vector3.new(relative.X, 0, relative.Z).Magnitude, 45, 420)
+                local angle = math.atan2(relative.Z, relative.X)
+
+                swirlData[obj] = {
+                    radius = radius,
+                    angle = angle,
+                    height = math.clamp(relative.Y, -100, 220),
+                    speed = math.random(45, 100) / 100,
+                    phase = math.random() * math.pi * 2,
+                    spin = math.random(-100, 100) / 100
+                }
+            end
+        end
+    end
+
+    constructionSwirlActive = true
+end
+
+local function stopConstructionSwirl()
+    constructionSwirlActive = false
+
+    for _, obj in ipairs(swirlParts) do
+        if obj and obj.Parent and swirlOriginalCFrames[obj] then
+            obj.CFrame = swirlOriginalCFrames[obj]
+        end
+    end
+
+    swirlParts = {}
+    swirlData = {}
+    swirlOriginalCFrames = {}
+end
+
+local function startPlayerFloat()
+    if floatStarted then
+        return
+    end
+
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not root or not monsterWorldPosition then
+        return
+    end
+
+    floatStarted = true
+    floatStartCFrame = root.CFrame
+
+    local targetPosition = monsterWorldPosition + Vector3.new(0, 40, 0)
+    local lookPosition = monsterWorldPosition + Vector3.new(0, 50, 0)
+
+    floatTargetCFrame = CFrame.lookAt(targetPosition, lookPosition)
+
+    pcall(function()
+        root.Anchored = true
+    end)
+end
+
+local function stopPlayerFloat()
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if root then
+        pcall(function()
+            root.Anchored = false
+        end)
+
+        if floatStartCFrame then
+            root.CFrame = floatStartCFrame
+        end
+    end
+
+    floatStarted = false
+    floatStartCFrame = nil
+    floatTargetCFrame = nil
+end
+
+local function updatePlayerFloat()
+    if not floatStarted or not floatTargetCFrame then
+        return
+    end
+
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+        return
+    end
+
+    local elapsed = tick() - effectStartTime - 2
+    local alpha = math.clamp(elapsed / floatDuration, 0, 1)
+    local smoothAlpha = alpha * alpha * (3 - 2 * alpha)
+
+    local targetPosition = monsterWorldPosition + Vector3.new(0, 40, 0)
+    local startPosition = floatStartCFrame.Position
+
+    local position = startPosition:Lerp(targetPosition, smoothAlpha)
+    local lookPosition = monsterWorldPosition + Vector3.new(0, 50, 0)
+
+    local swayX = math.sin(tick() * 4.5) * 1.5
+    local swayY = math.sin(tick() * 3.2) * 1.2
+    local swayZ = math.cos(tick() * 3.8) * 1.5
+
+    root.CFrame = CFrame.lookAt(
+        position + Vector3.new(swayX, swayY, swayZ),
+        lookPosition
+    )
+end
+
+local function restoreOriginalState()
+    for _, obj in ipairs(floorParts) do
+        if obj and obj.Parent then
+            if originalColors[obj] then
+                obj.Color = originalColors[obj]
+            end
+
+            if originalCFrames[obj] then
+                obj.CFrame = originalCFrames[obj]
+            end
+        end
+    end
+
+    floorParts = {}
+    originalColors = {}
+    originalCFrames = {}
+end
+
+local function updateButtonColor()
+    if isActive then
+        toggleButton.TextColor3 = Color3.fromRGB(255, 0, 0)
+        buttonStroke.Color = Color3.fromRGB(255, 0, 0)
+    else
+        toggleButton.TextColor3 = Color3.fromRGB(255, 220, 0)
+        buttonStroke.Color = Color3.fromRGB(255, 170, 0)
+    end
+end
+
+local function activateLighting()
+    Lighting.Brightness = 0.35
+    Lighting.Ambient = Color3.fromRGB(80, 0, 0)
+    Lighting.OutdoorAmbient = Color3.fromRGB(55, 0, 0)
+    Lighting.ColorShift_Top = Color3.fromRGB(130, 0, 0)
+    Lighting.ColorShift_Bottom = Color3.fromRGB(70, 0, 0)
+    Lighting.FogColor = Color3.fromRGB(65, 0, 0)
+    Lighting.FogStart = 80
+    Lighting.FogEnd = 900
+end
+
+local function restoreLighting()
+    Lighting.Brightness = originalLighting.Brightness
+    Lighting.Ambient = originalLighting.Ambient
+    Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+    Lighting.ColorShift_Top = originalLighting.ColorShift_Top
+    Lighting.ColorShift_Bottom = originalLighting.ColorShift_Bottom
+    Lighting.FogColor = originalLighting.FogColor
+    Lighting.FogStart = originalLighting.FogStart
+    Lighting.FogEnd = originalLighting.FogEnd
+end
+
+local colorSequence = {
+    Color3.fromRGB(35, 0, 0),
+    Color3.fromRGB(90, 0, 0),
+    Color3.fromRGB(150, 0, 0),
+    Color3.fromRGB(255, 0, 0),
+    Color3.fromRGB(75, 0, 0)
+}
+
+local renderConnection
+
+renderConnection = RunService.RenderStepped:Connect(function(dt)
+    if not isActive then
+        return
+    end
+
+    local now = tick()
+    local elapsed = now - effectStartTime
+
+    local colorIndex = (now * 18) % #colorSequence + 1
+    local targetColor = colorSequence[math.floor(colorIndex)]
+
+    for _, obj in ipairs(floorParts) do
+        if obj and obj.Parent then
+            obj.Color = targetColor
+
+            local origCF = originalCFrames[obj]
+
+            if origCF and not constructionSwirlActive then
+                local offsetX = math.random(-350, 350) / 100
+                local offsetZ = math.random(-350, 350) / 100
+                local offsetY = math.random(-150, 150) / 100
+
+                obj.CFrame = origCF + Vector3.new(offsetX, offsetY, offsetZ)
+            end
+        end
+    end
+
+    if constructionSwirlActive and monsterWorldPosition then
+        local swirlTime = elapsed
+
+        for _, obj in ipairs(swirlParts) do
+            if obj and obj.Parent then
+                local data = swirlData[obj]
+
+                if data then
+                    local angle = data.angle + swirlTime * data.speed * data.spin
+                    local radiusPulse = math.sin(swirlTime * 2.5 + data.phase) * 8
+                    local radius = data.radius + radiusPulse
+
+                    local x = math.cos(angle) * radius
+                    local z = math.sin(angle) * radius
+                    local y = data.height + math.sin(swirlTime * 3 + data.phase) * 8
+
+                    local target = monsterWorldPosition + Vector3.new(x, y, z)
+                    local original = swirlOriginalCFrames[obj]
+
+                    obj.CFrame =
+                        CFrame.lookAt(target, monsterWorldPosition)
+                        * CFrame.Angles(
+                            math.sin(swirlTime * 2 + data.phase) * 0.7,
+                            angle,
+                            math.cos(swirlTime * 2.5 + data.phase) * 0.7
+                        )
+                end
+            end
+        end
+    end
+
+    if elapsed >= 2 and not floatStarted then
+        stopConstructionSwirl()
+        startPlayerFloat()
+    end
+
+    updatePlayerFloat()
+
+    if monster and monster.Parent then
+        local shake = math.sin(now * 5) * 0.8
+        local float = math.sin(now * 1.7) * 2
+        local rotation = math.sin(now * 1.2) * 0.035
+
+        for _, part in ipairs(monsterParts) do
+            if part and part.Parent then
+                local baseCF = monsterBaseCFrames[part]
+
+                if baseCF then
+                    part.CFrame =
+                        baseCF
+                        * CFrame.new(shake, float, 0)
+                        * CFrame.Angles(0, rotation, 0)
+                end
+            end
+        end
+
+        if monsterLight then
+            monsterLight.Brightness = 12 + math.abs(math.sin(now * 4)) * 22
+        end
+    end
+
+    local camera = Workspace.CurrentCamera
+
+    if camera then
+        local earthquakeMultiplier = elapsed < 2 and 1.5 or 0.8
+        local earthquakeX = math.sin(now * earthquakeSpeed) * earthquakeStrength * earthquakeMultiplier
+        local earthquakeY = math.sin(now * (earthquakeSpeed * 1.37)) * earthquakeStrength * earthquakeMultiplier
+        local earthquakeZ = math.cos(now * (earthquakeSpeed * 0.83)) * earthquakeStrength * earthquakeMultiplier
+
+        camera.CFrame =
+            camera.CFrame
+            * CFrame.new(earthquakeX, earthquakeY, earthquakeZ)
+            * CFrame.Angles(
+                earthquakeY * 0.025,
+                earthquakeX * 0.025,
+                earthquakeZ * 0.025
+            )
+    end
+end)
+
+toggleButton.MouseButton1Click:Connect(function()
+    isActive = not isActive
+    updateButtonColor()
+
+    if isActive then
+        effectStartTime = tick()
+        floatStarted = false
+        floatStartCFrame = nil
+        floatTargetCFrame = nil
+
+        updateFloorList()
+        activateLighting()
+        createMonster()
+        prepareConstructionSwirl()
+
+        pcall(function()
+            sound:Play()
+        end)
+    else
+        stopConstructionSwirl()
+        stopPlayerFloat()
+        restoreOriginalState()
+        restoreLighting()
+        destroyMonster()
+
+        pcall(function()
+            sound:Stop()
+        end)
+    end
+end)
+
+screenGui.AncestryChanged:Connect(function()
+    if not screenGui.Parent then
+        if renderConnection then
+            renderConnection:Disconnect()
+        end
+
+        stopConstructionSwirl()
+        stopPlayerFloat()
+
+        pcall(function()
+            sound:Stop()
+        end)
+
+        restoreOriginalState()
+        restoreLighting()
+        destroyMonster()
+    end
+end)
